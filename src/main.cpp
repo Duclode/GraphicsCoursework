@@ -1,7 +1,11 @@
+// @global.includes
 #include <Shader.h>
 #include <camera.h>
 #include <model.h>
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -14,16 +18,33 @@
 #include <math.h>
 #include <string>
 
+//==============================================================================
+// @global.callbacks
+//==============================================================================
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 unsigned int loadTexture(char const * path);
+void setInputMode(GLFWwindow* window, bool enableImgui);; // toggle between camera and UI windows
 
-// settings
+//==============================================================================
+// @global.functions
+//==============================================================================
+void renderGUI();
+void showFrameRateUI();
+void showLightsUI();
+void syncLightPositionsFromUI();
+
+//==============================================================================
+// @global.state_settings
+//==============================================================================
+
+// window
 const unsigned int SCR_WIDTH {800};
 const unsigned int SCR_HEIGHT {600};
+ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
 
 // camera
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f)); // 0.5f, 0.8f, 4.0f
@@ -37,14 +58,30 @@ float lastY {SCR_HEIGHT / 2.0f};
 float deltaTime {0.0f};  // Time between current frame and last frame
 float lastFrame {0.0f};  // Time of last frame
 
-// texture
-// stores how much we're seeing of either texture
-float mixValue {0.2f};
-
 // lighting
 bool toggleFlashLight {true};
+float light1Position[3] = {1.2f,  1.0f,  2.0f};
+float light2Position[3] = {2.3f,  -3.3f,  -4.0f};
+float world_light_direction[3] = {-0.2f,  -1.0f,  -0.3f};
+float world_light_ambient[3] = {0.05f,  0.05f,  0.05f};
+float world_light_diffuse[3] = {0.4f, 0.4f, 0.4f};
+float world_light_specular[3] = {0.5f,  0.5f,  0.5f};
+glm::vec3 pointLightPositions[] = {
+    glm::vec3(light1Position[0], light1Position[1], light1Position[2]),
+    glm::vec3(light2Position[0], light2Position[1], light2Position[2]),
+    glm::vec3(-4.0f,  2.0f, -12.0f),
+    glm::vec3( 0.0f,  0.0f, -3.0f)
+};
+
+// gui
+bool show_lights_window = false;
+bool imguiMode = false; // input mode
 
 int main() {
+//==========================================================================
+// @app.init
+//==========================================================================
+
     // GLFW: initialize and configure
     // ------------------------------
     // glewExperimental = true;
@@ -56,6 +93,10 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     // glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+
+    //==========================================================================
+    // @window.create
+    //==========================================================================
 
     // glfw window creation
     // --------------------
@@ -71,12 +112,36 @@ int main() {
     glfwWindowHintString(GLFW_WAYLAND_APP_ID, "themepark-app");
     #endif
     glfwMakeContextCurrent(window);
+    // glfwSwapInterval(1); // Enable vsync
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, keyCallback);
 
-    // tell GLFW to capture our mouse
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    // tell GLFW to capture mouse
+    setInputMode(window, false);
+
+    //==========================================================================
+    // @imgui.init
+    //==========================================================================
+
+    // Setup Dear ImGui context
+    // ------------------------
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+
+    // Setup Platform/Renderer backends
+    // Second param install_callback=true will install GLFW callbacks and chain to existing ones.
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init();
+
+    //==========================================================================
+    // @gl.init
+    //==========================================================================
 
     // glad: load all OpenGL function pointers
     // ---------------------------------------
@@ -98,9 +163,12 @@ int main() {
     // tell stb_image.h to flip loaded texture's on the y-axis.
     stbi_set_flip_vertically_on_load(true);
 
-
+    //==========================================================================
+    // @shader.load
+    // -------------------------------------------------------------------------
     // build and compile shader programs
-    // ------------------------------------
+    //==========================================================================
+
     Shader modelShader("shaders/glslfiles/modelShader.vert",
                           "shaders/glslfiles/modelShader.frag");
 
@@ -109,9 +177,10 @@ int main() {
 
     Shader lightSrcShader("shaders/glslfiles/lightSrcShader.vert",
                           "shaders/glslfiles/lightSrcShader.frag");
+    //==========================================================================
+    // @model.load
+    //==========================================================================
 
-    // load models
-    // -----------
     Model backpackModel("assets/backpack/backpack.obj");
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
@@ -176,14 +245,12 @@ int main() {
         glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
         glm::vec3(1.5f, 0.2f, -1.5f),   glm::vec3(-1.3f, 1.0f, -1.5f)};
 
-    glm::vec3 pointLightPositions[] = {
-        glm::vec3( 1.2f,  1.0f,  2.0f),
-        glm::vec3( 2.3f, -3.3f, -4.0f),
-        glm::vec3(-4.0f,  2.0f, -12.0f),
-        glm::vec3( 0.0f,  0.0f, -3.0f)
-    };
+    //==========================================================================
+    // @buffer.cube
+    //==========================================================================
 
-    unsigned int VBO, cubeVAO;
+    unsigned int VBO{};
+    unsigned int cubeVAO{};
     glGenVertexArrays(1, &cubeVAO);
     glGenBuffers(1, &VBO);
 
@@ -204,13 +271,14 @@ int main() {
                           (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    // second, configure the light's VAO (VBO stays the same; the vertices are
-    // the same for the light object which is also a 3D cube)
+    //==========================================================================
+    // @buffer.light
+    //==========================================================================
+
     unsigned int lightVAO{};
     glGenVertexArrays(1, &lightVAO);
     glBindVertexArray(lightVAO);
-    // we only need to bind to the VBO, the container's VBO's data already
-    // contains the data.
+    // light object uses same VBO as cube obj
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     // position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
@@ -220,11 +288,14 @@ int main() {
                           (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
+    // set to default
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    // Textures 1 -- restone lamp
-    // --------------------------
+    //==========================================================================
+    // @texture.load
+    //==========================================================================
+
     unsigned int lightTexture{};
 
     // Texture 1 -- redstone lamp
@@ -282,29 +353,6 @@ int main() {
     // material properties
     lightingShader.setFloat("material.shininess", 32.0f);
 
-    // lighting properties
-    // Directional Light
-    lightingShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f); // global light dir
-    lightingShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
-    lightingShader.setVec3("dirLight.diffuse", 0.4f, 0.4f, 0.4f);  // brightness
-    lightingShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
-    // point light 1
-    lightingShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
-    lightingShader.setVec3("pointLights[0].ambient", 0.1f, 0.1f, 0.1f);
-    lightingShader.setVec3("pointLights[0].diffuse", 1.0f, 1.0f, 1.0f); // brightness
-    lightingShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
-    lightingShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
-    lightingShader.setFloat("pointLights[0].linear",    0.09f);
-    lightingShader.setFloat("pointLights[0].quadratic", 0.032f);
-    // point light 2
-    lightingShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-    lightingShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
-    lightingShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
-    lightingShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
-    lightingShader.setFloat("pointLights[1].constant", 1.0f);
-    lightingShader.setFloat("pointLights[1].linear", 0.09f);
-    lightingShader.setFloat("pointLights[1].quadratic", 0.032f);
-
     modelShader.use();
 
     // material properties
@@ -316,22 +364,6 @@ int main() {
     modelShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
     modelShader.setVec3("dirLight.diffuse", 0.4f, 0.4f, 0.4f);  // brightness
     modelShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
-    // point light 1
-    modelShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
-    modelShader.setVec3("pointLights[0].ambient", 0.1f, 0.1f, 0.1f);
-    modelShader.setVec3("pointLights[0].diffuse", 1.0f, 1.0f, 1.0f); // brightness
-    modelShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
-    modelShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
-    modelShader.setFloat("pointLights[0].linear",    0.09f);
-    modelShader.setFloat("pointLights[0].quadratic", 0.032f);
-    // point light 2
-    modelShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-    modelShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
-    modelShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
-    modelShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
-    modelShader.setFloat("pointLights[1].constant", 1.0f);
-    modelShader.setFloat("pointLights[1].linear", 0.09f);
-    modelShader.setFloat("pointLights[1].quadratic", 0.032f);
 
     // render loop
     // -----------
@@ -342,20 +374,61 @@ int main() {
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
+        glfwPollEvents();
+
         // input
         // -----
         processInput(window);
-        glfwSetKeyCallback(window, keyCallback);
+
+        // (Your code calls glfwPollEvents())
+        // ...
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        // draw gui
+        renderGUI();
+        showFrameRateUI();
+
+        syncLightPositionsFromUI();
 
         // render
         // ------
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
         // activate shader
         lightingShader.use();
         lightingShader.setVec3("viewPos", camera.Position);
 
+        //======================================================================
+        // @lighting.cubes
+        // ---------------------------------------------------------------------
+        // lighting properties
+        //======================================================================
+        // Directional Light
+        lightingShader.setVec3("dirLight.direction", world_light_direction[0], world_light_direction[1], world_light_direction[2]); // global light dir
+        lightingShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
+        lightingShader.setVec3("dirLight.diffuse", world_light_diffuse[0], world_light_diffuse[1], world_light_diffuse[2]);  // brightness
+        lightingShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
+        // point light 1
+        lightingShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
+        lightingShader.setVec3("pointLights[0].ambient", 0.1f, 0.1f, 0.1f);
+        lightingShader.setVec3("pointLights[0].diffuse", 1.0f, 1.0f, 1.0f); // brightness
+        lightingShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
+        lightingShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
+        lightingShader.setFloat("pointLights[0].linear",    0.09f);
+        lightingShader.setFloat("pointLights[0].quadratic", 0.032f);
+        // point light 2
+        lightingShader.setVec3("pointLights[1].position", pointLightPositions[1]);
+        lightingShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
+        lightingShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
+        lightingShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
+        lightingShader.setFloat("pointLights[1].constant", 1.0f);
+        lightingShader.setFloat("pointLights[1].linear", 0.09f);
+        lightingShader.setFloat("pointLights[1].quadratic", 0.032f);
         // flashlight
         lightingShader.setVec3("flashLight.position",  camera.Position);
         lightingShader.setVec3("flashLight.direction", camera.Front);
@@ -369,28 +442,21 @@ int main() {
         lightingShader.setFloat("flashLight.quadratic", 0.032f);
         lightingShader.setBool("flashLight.toggle", toggleFlashLight);
 
+        //======================================================================
+        // @camera.matrices
+        // ---------------------------------------------------------------------
         // camera/view transformations
+        //======================================================================
+
         glm::mat4 projection = glm::perspective(
             glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
         lightingShader.setMat4("projection", projection);
         lightingShader.setMat4("view", view);
 
-        // update light color over time
-        // ----------------------------------------------------------
-        /**
-        glm::vec3 lightColor;
-        lightColor.x = (float)sin(glfwGetTime() * 1.0f) + 1.0f;
-        lightColor.y = (float)sin(glfwGetTime() * 1.0f) + 1.0f;
-        lightColor.z = (float)sin(glfwGetTime() * 1.0f) + 1.0f;
-
-        glm::vec3 diffuseColor = lightColor * glm::vec3(0.5f);
-        glm::vec3 ambientColor = diffuseColor * glm::vec3(0.2f);
-
-        lightingShader.setVec3("light.ambient", ambientColor);
-        lightingShader.setVec3("light.diffuse", diffuseColor);
-        **/
-        //\\----------------------------------------------------------
+        //======================================================================
+        // @renderer.cubes
+        //======================================================================
 
         // bind diffuse map Texture on corresponding texture units
         glActiveTexture(GL_TEXTURE0);
@@ -398,7 +464,6 @@ int main() {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, specularMap);
 
-        // render boxes
         glBindVertexArray(cubeVAO);
         for (unsigned int i {0}; i < 1; i++) {
             glm::mat4 model = glm::mat4(1.0f);
@@ -413,7 +478,11 @@ int main() {
         }
         glBindVertexArray(0);
 
+        //======================================================================
+        // @renderer.lights
+        // ---------------------------------------------------------------------
         // draw the lamp object
+        //======================================================================
         lightSrcShader.use();
         lightSrcShader.setMat4("projection", projection);
         lightSrcShader.setMat4("view", view);
@@ -433,13 +502,43 @@ int main() {
         }
         glBindVertexArray(0);
 
+        //======================================================================
+        // @renderer.models
+        // ---------------------------------------------------------------------
         // draw model objects
+        //======================================================================
         modelShader.use();
         modelShader.setMat4("projection", projection);
         modelShader.setMat4("view", view);
 
         modelShader.setVec3("viewPos", camera.Position);
 
+        //======================================================================
+        // @lighting.model
+        // ---------------------------------------------------------------------
+        // lighting properties
+        //======================================================================
+        // Directional Light
+        modelShader.setVec3("dirLight.direction", world_light_direction[0], world_light_direction[1], world_light_direction[2]); // global light dir
+        modelShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
+        modelShader.setVec3("dirLight.diffuse", world_light_diffuse[0], world_light_diffuse[1], world_light_diffuse[2]);  // brightness
+        modelShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
+        // point light 1
+        modelShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
+        modelShader.setVec3("pointLights[0].ambient", 0.1f, 0.1f, 0.1f);
+        modelShader.setVec3("pointLights[0].diffuse", 1.0f, 1.0f, 1.0f); // brightness
+        modelShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
+        modelShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
+        modelShader.setFloat("pointLights[0].linear",    0.09f);
+        modelShader.setFloat("pointLights[0].quadratic", 0.032f);
+        // point light 2
+        modelShader.setVec3("pointLights[1].position", pointLightPositions[1]);
+        modelShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
+        modelShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
+        modelShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
+        modelShader.setFloat("pointLights[1].constant", 1.0f);
+        modelShader.setFloat("pointLights[1].linear", 0.09f);
+        modelShader.setFloat("pointLights[1].quadratic", 0.032f);
         // flashlight
         modelShader.setVec3("flashLight.position",  camera.Position);
         modelShader.setVec3("flashLight.direction", camera.Front);
@@ -464,70 +563,92 @@ int main() {
 
         glBindVertexArray(0); // no need to unbind it every time
 
+        //======================================================================
+        // @imgui.render
+        // ---------------------------------------------------------------------
+        // gui rendering
+        //======================================================================
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse
         // moved etc.)
         // -------------------------------------------------------------------
         glfwSwapBuffers(window);
-        glfwPollEvents();
     }
 
+    //==========================================================================
+    // @app.shutdown
+    // -------------------------------------------------------------------------
     // optional: de-allocate all resources once they've outlived their purpose:
-    // ------------------------------------------------------------------------
+    //==========================================================================
     glDeleteVertexArrays(1, &cubeVAO);
     glDeleteVertexArrays(1, &lightVAO);
     glDeleteBuffers(1, &VBO);
     glDeleteProgram(lightingShader.ID);
     glDeleteProgram(lightSrcShader.ID);
 
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     // glfw: terminate, clearing all previously allocated GLFW resources.
     // ------------------------------------------------------------------
+    glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
 }
 
+//==============================================================================
+// @input.keyboard
+// -----------------------------------------------------------------------------
 // glfw: whenever the window size changed (by OS or user resize) this callback
 // function executes
-// ---------------------------------------------------------------------------
+//==============================================================================
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-        mixValue += 0.01f;  // change this value accordingly (might be too slow
-                            // or too fast based on system hardware)
-        if (mixValue >= 1.0f) mixValue = 1.0f;
+    if (!imguiMode) {
+        // Camera movement
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.ProcessKeyboard(RIGHT, deltaTime);
     }
-    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-        mixValue -= 0.01f;  // change this value accordingly (might be too slow
-                            // or too fast based on system hardware)
-        if (mixValue <= 0.0f) mixValue = 0.0f;
-    }
-
-    // Camera movement
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
+//==============================================================================
+// @input.hotkeys
+// -----------------------------------------------------------------------------
 // Triggers exactly once per key press
+//==============================================================================
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     // suppress -Wunused-parameter
     (void)window;
     (void)scancode;
     (void)mods;
+
     if (key == GLFW_KEY_F && action == GLFW_PRESS) {
         toggleFlashLight = !toggleFlashLight;
     }
+
+    // toggles input mode between the camera and the UI windows
+    if (key == GLFW_KEY_M && action == GLFW_PRESS) {
+        setInputMode(window, !imguiMode);
+    }
 }
 
+//==============================================================================
+// @window.resize
+// -----------------------------------------------------------------------------
 // process all input: query GLFW whether relevant keys are pressed/released this
 // frame and react accordingly
-// ----------------------------------------------------------------------------
+//==============================================================================
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     (void)window;  // suppress -Wunused-parameter
     // make sure the viewport matches the new window dimensions; note that width
@@ -536,10 +657,17 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
+//==============================================================================
+// @input.mouse
+// -----------------------------------------------------------------------------
 // process mouse input
-// -------------------
+//==============================================================================
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     (void)window;  // suppress -Wunused-parameter
+
+    if (imguiMode)
+        return;
+
     float xpos {static_cast<float>(xposIn)};
     float ypos {static_cast<float>(yposIn)};
 
@@ -557,16 +685,45 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
+//==============================================================================
+// @input.mode
+//==============================================================================
+void setInputMode(GLFWwindow* window, bool enableImgui)
+{
+    imguiMode = enableImgui;
+
+    if (imguiMode) {
+        // Give mouse control to ImGui
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    } else {
+        // Capture mouse for FPS camera and make the transition feel smooth
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwFocusWindow(window);
+        glfwSetCursorPos(window, static_cast<float>(SCR_WIDTH) / 2.0,
+                         static_cast<float>(SCR_HEIGHT) / 2.0);
+
+        lastX = static_cast<float>(SCR_WIDTH) / 2.0f;
+        lastY = static_cast<float>(SCR_HEIGHT) / 2.0f;
+        firstMouse = true;
+    }
+}
+
+//==============================================================================
+// @input.scroll
+// -----------------------------------------------------------------------------
 // glfw: whenever the mouse scroll wheel scrolls, this callback is called
-// ----------------------------------------------------------------------
+//==============================================================================
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     (void)window;   // suppress -Wunused-parameter
     (void)xoffset;  // suppress -Wunused-parameter
     camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
 
+//==============================================================================
+// @texture.load
+// -----------------------------------------------------------------------------
 // utility function for loading a 2D texture from file
-// ---------------------------------------------------
+//==============================================================================
 unsigned int loadTexture(const char* path)
 {
     unsigned int textureID{};
@@ -605,3 +762,116 @@ unsigned int loadTexture(const char* path)
 
     return textureID;
 }
+
+//==============================================================================
+// @imgui.main_window
+//==============================================================================
+void renderGUI() {
+    // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
+    {
+        static float f = 0.0f;
+        static int counter = 0;
+
+        ImGui::Begin("Hello, world!", NULL, ImGuiWindowFlags_AlwaysAutoResize); // Create a window called "Hello, world!" and append into it.
+
+        ImGui::Text("This is some useful text."); // Display some text (you can use a format strings too)
+
+        ImGui::Text( "Input mode: %s", imguiMode ? "GUI" : "Camera");
+
+        ImGui::Text("Press M to switch modes");
+
+        ImGui::Checkbox("Edit Lights Window", &show_lights_window);
+
+        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+        ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+
+        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+            counter++;
+        ImGui::SameLine();
+        ImGui::Text("counter = %d", counter);
+
+        ImGui::End();
+    }
+
+    // 3. Show another simple window.
+    if (show_lights_window)
+    {
+        showLightsUI();
+    }
+}
+
+//==============================================================================
+// @imgui.fps
+//==============================================================================
+void showFrameRateUI() {
+    static int location = 3;
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav;
+    const float PAD = 10.0f;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImVec2 work_pos = viewport->WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
+    ImVec2 work_size = viewport->WorkSize;
+    ImVec2 window_pos, window_pos_pivot;
+    window_pos.x = (location & 1) ? (work_pos.x + work_size.x - PAD) : (work_pos.x + PAD);
+    window_pos.y = (location & 2) ? (work_pos.y + work_size.y - PAD) : (work_pos.y + PAD);
+    window_pos_pivot.x = (location & 1) ? 1.0f : 0.0f;
+    window_pos_pivot.y = (location & 2) ? 1.0f : 0.0f;
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+    window_flags |= ImGuiWindowFlags_NoMove;
+    ImGui::SetNextWindowBgAlpha(0.35f); // Transparent background
+    if (ImGui::Begin("FPS Gui", NULL, window_flags)) {
+        ImGui::Text("FPS\n");
+        ImGui::Separator();
+        ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+    }
+    ImGui::End();
+}
+
+//==============================================================================
+// @imgui.lighting
+//==============================================================================
+void showLightsUI() {
+    // Pass a pointer to our bool variable (the window will have a closing button that will clear
+    // the bool when clicked)
+    ImGui::Begin("Edit lights", &show_lights_window, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Text("Edit lights");
+
+    static ImGuiSliderFlags sliderFlags = ImGuiSliderFlags_None;
+    static ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed;
+    if (ImGui::TreeNodeEx("Directional Light", nodeFlags)) {
+        ImGui::Text("World light direction, x: %f, y: %f, z: %f", world_light_direction[0], world_light_direction[1], world_light_direction[2]);
+        ImGui::DragFloat3("Light direction", world_light_direction, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
+        ImGui::Text("World light diffuse, x: %f, y: %f, z: %f", world_light_diffuse[0], world_light_diffuse[1], world_light_diffuse[2]);
+        ImGui::DragFloat3("Diffuse", world_light_diffuse, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Point Light 1", nodeFlags)) {
+        ImGui::Text("Light 1 pos, x: %f, y: %f, z: %f", light1Position[0], light1Position[1], light1Position[2]);
+        ImGui::DragFloat3("Position", light1Position, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Point Light 2", nodeFlags)) {
+        ImGui::Text("Light 2 pos, x: %f, y: %f, z: %f", light2Position[0], light2Position[1], light2Position[2]);
+        ImGui::DragFloat3("Position", light2Position, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
+        ImGui::TreePop();
+    }
+
+    if (ImGui::Button("Close Me"))
+        show_lights_window = false;
+
+    syncLightPositionsFromUI();
+    ImGui::End();
+}
+
+void syncLightPositionsFromUI() {
+    pointLightPositions[0] = glm::vec3(
+        light1Position[0], light1Position[1], light1Position[2]);
+    pointLightPositions[1] = glm::vec3(
+        light2Position[0], light2Position[1], light2Position[2]);
+}
+
