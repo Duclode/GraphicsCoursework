@@ -128,9 +128,14 @@ private:
         textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
         // normal maps
         std::vector<Texture> normalMaps = loadMaterialTextures(material,
-                                            aiTextureType_HEIGHT, "texture_normal");
+                                            aiTextureType_NORMALS, "texture_normal");
+        // Fallback for exporters that store them as bump maps
+        if (normalMaps.empty()) {
+            normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
+        }
+
         textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
-        // 4. height maps
+        // height maps
         std::vector<Texture> heightMaps = loadMaterialTextures(material,
                                             aiTextureType_AMBIENT, "texture_height");
         textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
@@ -201,6 +206,8 @@ inline unsigned int TextureFromFile(const char* path,
         stbi_image_free(data);
     } else {
         std::cout << "Texture failed to load at path: " << path << std::endl;
+        std::cout << "Failed: " << filename << '\n';
+        std::cout << "Reason: " << stbi_failure_reason() << '\n';
         stbi_image_free(data);
     }
     return textureID;

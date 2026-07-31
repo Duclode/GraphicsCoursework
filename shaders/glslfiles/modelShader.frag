@@ -97,6 +97,9 @@ void main()
     FragColor = vec4(result, 1.0);
 }
 
+//==========================================================================
+// @shader.model.point
+//==========================================================================
 vec3 calcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir)
 {
     vec3 lightDir = normalize(light.position - fragPos);
