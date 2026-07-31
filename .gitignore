@@ -51,6 +51,10 @@ Makefile
 install_manifest.txt
 compile_commands.json
 
+## Dear ImGui artifacts
+imgui.ini
+imgui*.ini
+
 # Temporary files
 *.tmp
 *.log

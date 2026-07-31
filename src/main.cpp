@@ -41,7 +41,7 @@ void syncLightPositionsFromUI();
 // @global.state_settings
 //==============================================================================
 
-// window
+// @window.globals
 const unsigned int SCR_WIDTH {800};
 const unsigned int SCR_HEIGHT {600};
 ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
@@ -58,9 +58,12 @@ float lastY {SCR_HEIGHT / 2.0f};
 float deltaTime {0.0f};  // Time between current frame and last frame
 float lastFrame {0.0f};  // Time of last frame
 
-// lighting
+// @lighting.globals
 bool toggleFlashLight {true};
 float light1Position[3] = {1.2f,  1.0f,  2.0f};
+float light1Ambient[3] = {0.1f, 0.1f, 0.1f};
+float light1Diffuse[3] = {1.0f, 1.0f, 1.0f};
+float light1Specular[3] = {1.0f, 1.0f, 1.0f};
 float light2Position[3] = {2.3f,  -3.3f,  -4.0f};
 float world_light_direction[3] = {-0.2f,  -1.0f,  -0.3f};
 float world_light_ambient[3] = {0.05f,  0.05f,  0.05f};
@@ -73,7 +76,7 @@ glm::vec3 pointLightPositions[] = {
     glm::vec3( 0.0f,  0.0f, -3.0f)
 };
 
-// gui
+// @imgui.globals
 bool show_lights_window = false;
 bool imguiMode = false; // input mode
 
@@ -177,11 +180,17 @@ int main() {
 
     Shader lightSrcShader("shaders/glslfiles/lightSrcShader.vert",
                           "shaders/glslfiles/lightSrcShader.frag");
+
     //==========================================================================
     // @model.load
     //==========================================================================
 
     Model backpackModel("assets/backpack/backpack.obj");
+    Model brickCircleModel("assets/brickCircle/brickCircle.obj");
+    Model pendulumRideFrameModel("assets/pendulumRide/pendulumFrame.obj");
+    Model pendulumRideArmModel("assets/pendulumRide/pendulumArm.obj");
+    Model pendulumRideGondolaModel("assets/pendulumRide/pendulumGondola.obj");
+    Model groundModel("assets/ground/ground.obj");
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
@@ -415,9 +424,10 @@ int main() {
         lightingShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
         // point light 1
         lightingShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
-        lightingShader.setVec3("pointLights[0].ambient", 0.1f, 0.1f, 0.1f);
-        lightingShader.setVec3("pointLights[0].diffuse", 1.0f, 1.0f, 1.0f); // brightness
-        lightingShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
+        lightingShader.setVec3("pointLights[0].ambient", glm::vec3(light1Ambient[0], light1Ambient[1], light1Ambient[2]));
+        lightingShader.setVec3("pointLights[0].diffuse", glm::vec3(light1Diffuse[0], light1Diffuse[1], light1Diffuse[2])); // brightness
+        lightingShader.setVec3("pointLights[0].specular", glm::vec3(light1Specular[0], light1Specular[1], light1Specular[2]));
+        // attenuation
         lightingShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
         lightingShader.setFloat("pointLights[0].linear",    0.09f);
         lightingShader.setFloat("pointLights[0].quadratic", 0.032f);
@@ -525,9 +535,10 @@ int main() {
         modelShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
         // point light 1
         modelShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
-        modelShader.setVec3("pointLights[0].ambient", 0.1f, 0.1f, 0.1f);
-        modelShader.setVec3("pointLights[0].diffuse", 1.0f, 1.0f, 1.0f); // brightness
-        modelShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
+        modelShader.setVec3("pointLights[0].ambient", glm::vec3(light1Ambient[0], light1Ambient[1], light1Ambient[2]));
+        modelShader.setVec3("pointLights[0].diffuse", glm::vec3(light1Diffuse[0], light1Diffuse[1], light1Diffuse[2])); // brightness
+        modelShader.setVec3("pointLights[0].specular", glm::vec3(light1Specular[0], light1Specular[1], light1Specular[2]));
+        // attenuation
         modelShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
         modelShader.setFloat("pointLights[0].linear",    0.09f);
         modelShader.setFloat("pointLights[0].quadratic", 0.032f);
@@ -552,14 +563,52 @@ int main() {
         modelShader.setFloat("flashLight.quadratic", 0.032f);
         modelShader.setBool("flashLight.toggle", toggleFlashLight);
 
-        // render the loaded model
+        // @render.model.backpack
         glm::mat4 model = glm::mat4(1.0f);
         // translate to center of the scene
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+        model = glm::translate(model, glm::vec3(0.0f, -3.0f, 0.0f));
         // scale down model to fit scene
         model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
         modelShader.setMat4("model", model);
-        backpackModel.Draw(modelShader);
+        // backpackModel.Draw(modelShader);
+
+        // @render.model.pendulumRide
+        glm::mat4 pendulumFrameModel = glm::mat4(1.0f);
+        pendulumFrameModel = glm::translate(pendulumFrameModel, glm::vec3(-3.0f, 0.0f, 0.0f));
+        pendulumFrameModel = glm::scale(pendulumFrameModel, glm::vec3(3.0f, 3.0f, 3.0f));
+        modelShader.setMat4("model", pendulumFrameModel);
+        pendulumRideFrameModel.Draw(modelShader);
+
+        // pendulum arm
+        float angle = 20.0f;
+        glm::mat4 pendulumArmModel = pendulumFrameModel;
+        angle *= (float)glfwGetTime();         // rotate over time
+        pendulumArmModel = glm::rotate(pendulumArmModel, glm::radians(angle),
+                            glm::vec3(1.0f, 0.0f, 0.0f));
+        modelShader.setMat4("model", pendulumArmModel);
+        pendulumRideArmModel.Draw(modelShader);
+
+        // pendulum gondola
+        angle = 40.0f;
+        angle *= (float)glfwGetTime();         // rotate over time
+        glm::mat4 pendulumGondolaModel = pendulumArmModel;
+        pendulumGondolaModel = glm::rotate(pendulumGondolaModel, glm::radians(angle),
+                            glm::vec3(0.0f, 1.0f, 0.0f));
+        modelShader.setMat4("model", pendulumGondolaModel);
+        pendulumRideGondolaModel.Draw(modelShader);
+
+        // @render.model.ground
+
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+        // scale down model to fit scene
+        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));
+        modelShader.setMat4("model", model);
+        groundModel.Draw(modelShader);
+
+
+
+        // @render.model.skyboc
 
         glBindVertexArray(0); // no need to unbind it every time
 
@@ -619,6 +668,11 @@ void processInput(GLFWwindow* window) {
             camera.ProcessKeyboard(LEFT, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
             camera.ProcessKeyboard(RIGHT, deltaTime);
+
+        // if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+            // TODO
+        // if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            // TODO
     }
 }
 
@@ -851,8 +905,18 @@ void showLightsUI() {
         ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Point Light 1", nodeFlags)) {
-        ImGui::Text("Light 1 pos, x: %f, y: %f, z: %f", light1Position[0], light1Position[1], light1Position[2]);
-        ImGui::DragFloat3("Position", light1Position, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
+        ImGui::Text("Light 1 pos, x: %.2f, y: %.2f, z: %.2f", light1Position[0], light1Position[1], light1Position[2]);
+        ImGui::DragFloat3("Position", light1Position, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        if (ImGui::Button("reset pos")) { light1Position[0] = {1.2f}; light1Position[1] = {1.0f}; light1Position[2] = {2.0f};}
+        ImGui::Text("Light 1 Ambient, R: %f, G: %f, B: %f", light1Ambient[0], light1Ambient[1], light1Ambient[2]);
+        ImGui::DragFloat3("Ambient", light1Ambient, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        if (ImGui::Button("reset amb")) { light1Ambient[0] = {0.1f}; light1Ambient[1] = {0.1f}; light1Ambient[2] = {0.1f};}
+        ImGui::Text("Light 1 Diffuse, R: %f, G: %f, B: %f", light1Diffuse[0], light1Diffuse[1], light1Diffuse[2]);
+        ImGui::DragFloat3("Diffuse", light1Diffuse, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        if (ImGui::Button("reset diff")) { light1Diffuse[0] = {1.0f}; light1Diffuse[1] = {1.0f}; light1Diffuse[2] = {1.0f};}
+        ImGui::Text("Light 1 Specular, R: %f, G: %f, B: %f", light1Specular[0], light1Specular[1], light1Specular[2]);
+        ImGui::DragFloat3("Specular", light1Specular, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        if (ImGui::Button("reset spec")) { light1Specular[0] = {1.0f}; light1Specular[1] = {1.0f}; light1Specular[2] = {1.0f};}
         ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Point Light 2", nodeFlags)) {

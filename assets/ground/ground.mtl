@@ -1,0 +1,13 @@
+# Blender 5.2.0 LTS MTL File: 'CoureworkWorld.blend'
+# www.blender.org
+
+newmtl Grass
+Ka 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd coast_sand_rocks_02_diff_4k.jpg
+map_Ks coast_sand_rocks_02_spec_1k.png
+map_Ns coast_sand_rocks_02_rough_1k.png
+map_Bump -bm 1.000000 coast_sand_rocks_02_nor_gl_1k.png
