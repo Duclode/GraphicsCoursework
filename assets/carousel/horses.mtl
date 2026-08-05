@@ -1,0 +1,13 @@
+# Blender 5.2.0 LTS MTL File: 'carousel_scaled.blend'
+# www.blender.org
+
+newmtl m_carousel
+Ka 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd carousel_m_carousel_BaseColor.png
+map_Ks carousel_m_carousel_Specular.png
+map_Ns carousel_m_carousel_Roughness.png
+map_Bump -bm 1.000000 carousel_m_carousel_Normal.png

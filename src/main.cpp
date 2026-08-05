@@ -36,6 +36,7 @@ void renderGUI();
 void showFrameRateUI();
 void showLightsUI();
 void syncLightPositionsFromUI();
+void initLights(Shader shader, Camera camera);
 
 //==============================================================================
 // @global.state_settings
@@ -44,10 +45,16 @@ void syncLightPositionsFromUI();
 // @window.globals
 const unsigned int SCR_WIDTH {800};
 const unsigned int SCR_HEIGHT {600};
-ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
+ImVec4 clear_color {ImVec4(0.1f, 0.1f, 0.1f, 1.0f)};
 
-// camera
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f)); // 0.5f, 0.8f, 4.0f
+// @cameras.globals
+Camera freeCamera(glm::vec3(-4.2f, 5.8f, 7.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, FREE);
+Camera groundCamera(glm::vec3(-4.2f, 1.75f, 7.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, FPS);
+Camera carouselCamera(glm::vec3(0.50f, 3.3f, -3.25f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, STATIONARY);
+// Camera pendulumCamera(glm::vec3(-3.8f, 1.9f, 0.25f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, STATIONARY);
+Camera currentCamera {freeCamera};
+// float positionss[3] = {-5.00f, -3.41f, -3.25f};
+int cameraID {0};
 
 // mouse
 bool firstMouse {true};
@@ -64,10 +71,10 @@ float light1Position[3] = {1.2f,  1.0f,  2.0f};
 float light1Ambient[3] = {0.1f, 0.1f, 0.1f};
 float light1Diffuse[3] = {1.0f, 1.0f, 1.0f};
 float light1Specular[3] = {1.0f, 1.0f, 1.0f};
-float light2Position[3] = {2.3f,  -3.3f,  -4.0f};
+float light2Position[3] = {25.0f,  10.0f,  -4.0f};
 float world_light_direction[3] = {-0.2f,  -1.0f,  -0.3f};
 float world_light_ambient[3] = {0.05f,  0.05f,  0.05f};
-float world_light_diffuse[3] = {0.4f, 0.4f, 0.4f};
+float world_light_diffuse {0.4f};
 float world_light_specular[3] = {0.5f,  0.5f,  0.5f};
 glm::vec3 pointLightPositions[] = {
     glm::vec3(light1Position[0], light1Position[1], light1Position[2]),
@@ -77,8 +84,11 @@ glm::vec3 pointLightPositions[] = {
 };
 
 // @imgui.globals
-bool show_lights_window = false;
-bool imguiMode = false; // input mode
+bool show_lights_window {false};
+bool imguiMode {false}; // input mode
+
+// @model.globals
+float pendulumArmAngle {glm::radians(0.0f)};
 
 int main() {
 //==========================================================================
@@ -185,12 +195,16 @@ int main() {
     // @model.load
     //==========================================================================
 
-    Model backpackModel("assets/backpack/backpack.obj");
-    Model brickCircleModel("assets/brickCircle/brickCircle.obj");
+    stbi_set_flip_vertically_on_load(false);
     Model pendulumRideFrameModel("assets/pendulumRide/pendulumFrame.obj");
     Model pendulumRideArmModel("assets/pendulumRide/pendulumArm.obj");
     Model pendulumRideGondolaModel("assets/pendulumRide/pendulumGondola.obj");
     Model groundModel("assets/ground/ground.obj");
+    Model carouselTopModel("assets/carousel/top.obj");
+    Model carouselHorsesModel("assets/carousel/horses.obj");
+    Model carouselBaseModel("assets/carousel/base.obj");
+    Model skyBoxModel("assets/skyBox/sky.obj");
+    stbi_set_flip_vertically_on_load(true);
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
@@ -248,7 +262,7 @@ int main() {
     };
     // clang-format on
     glm::vec3 cubePositions[] = {
-        glm::vec3(2.0f, -0.5f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
+        glm::vec3(5.0f, 3.0f, 0.0f),    glm::vec3(2.0f, 5.0f, -15.0f),
         glm::vec3(-1.5f, -2.2f, -2.5f), glm::vec3(-3.8f, -2.0f, -12.3f),
         glm::vec3(2.4f, -0.4f, -3.5f),  glm::vec3(-1.7f, 3.0f, -7.5f),
         glm::vec3(1.3f, -2.0f, -2.5f),  glm::vec3(1.5f, 2.0f, -2.5f),
@@ -351,6 +365,7 @@ int main() {
     // activate the shader before setting uniforms!
     lightSrcShader.use();
     lightSrcShader.setInt("lightTexture", 0);
+
     lightingShader.use();
     lightingShader.setInt("material.diffuse", 0);
     lightingShader.setInt("material.specular", 1);
@@ -366,13 +381,6 @@ int main() {
 
     // material properties
     modelShader.setFloat("material.shininess", 32.0f);
-
-    // lighting properties
-    // Directional Light
-    modelShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f); // global light dir
-    modelShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
-    modelShader.setVec3("dirLight.diffuse", 0.4f, 0.4f, 0.4f);  // brightness
-    modelShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
 
     // render loop
     // -----------
@@ -407,66 +415,40 @@ int main() {
         glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
-        // activate shader
-        lightingShader.use();
-        lightingShader.setVec3("viewPos", camera.Position);
-
-        //======================================================================
-        // @lighting.cubes
-        // ---------------------------------------------------------------------
-        // lighting properties
-        //======================================================================
-        // Directional Light
-        lightingShader.setVec3("dirLight.direction", world_light_direction[0], world_light_direction[1], world_light_direction[2]); // global light dir
-        lightingShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
-        lightingShader.setVec3("dirLight.diffuse", world_light_diffuse[0], world_light_diffuse[1], world_light_diffuse[2]);  // brightness
-        lightingShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
-        // point light 1
-        lightingShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
-        lightingShader.setVec3("pointLights[0].ambient", glm::vec3(light1Ambient[0], light1Ambient[1], light1Ambient[2]));
-        lightingShader.setVec3("pointLights[0].diffuse", glm::vec3(light1Diffuse[0], light1Diffuse[1], light1Diffuse[2])); // brightness
-        lightingShader.setVec3("pointLights[0].specular", glm::vec3(light1Specular[0], light1Specular[1], light1Specular[2]));
-        // attenuation
-        lightingShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
-        lightingShader.setFloat("pointLights[0].linear",    0.09f);
-        lightingShader.setFloat("pointLights[0].quadratic", 0.032f);
-        // point light 2
-        lightingShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        lightingShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
-        lightingShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
-        lightingShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
-        lightingShader.setFloat("pointLights[1].constant", 1.0f);
-        lightingShader.setFloat("pointLights[1].linear", 0.09f);
-        lightingShader.setFloat("pointLights[1].quadratic", 0.032f);
-        // flashlight
-        lightingShader.setVec3("flashLight.position",  camera.Position);
-        lightingShader.setVec3("flashLight.direction", camera.Front);
-        lightingShader.setFloat("flashLight.cutOff",   glm::cos(glm::radians(12.5f)));
-        lightingShader.setFloat("flashLight.outerCutOff",   glm::cos(glm::radians(17.5f)));
-        lightingShader.setVec3("flashLight.ambient", 0.1f, 0.1f, 0.1f);
-        lightingShader.setVec3("flashLight.diffuse", 1.0f, 1.0f, 1.0f); // brightness
-        lightingShader.setVec3("flashLight.specular", 1.0f, 1.0f, 1.0f);
-        lightingShader.setFloat("flashLight.constant",  1.0f); // 50 metres
-        lightingShader.setFloat("flashLight.linear",    0.09f);
-        lightingShader.setFloat("flashLight.quadratic", 0.032f);
-        lightingShader.setBool("flashLight.toggle", toggleFlashLight);
-
         //======================================================================
         // @camera.matrices
         // ---------------------------------------------------------------------
         // camera/view transformations
         //======================================================================
 
+        if (cameraID == 0) {
+            currentCamera = freeCamera;
+        } else if (cameraID == 1) {
+            currentCamera = groundCamera;
+        } else if (cameraID == 2) {
+            currentCamera = carouselCamera;
+        }
         glm::mat4 projection = glm::perspective(
-            glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = camera.GetViewMatrix();
-        lightingShader.setMat4("projection", projection);
-        lightingShader.setMat4("view", view);
+            glm::radians(currentCamera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f
+        );
+        glm::mat4 view = currentCamera.GetViewMatrix();
+
+        //======================================================================
+        // @lighting.cubes
+        // ---------------------------------------------------------------------
+        // lighting properties
+        //======================================================================
+
+        initLights(lightingShader, currentCamera);
 
         //======================================================================
         // @renderer.cubes
         //======================================================================
+
+        // activate shader
+        lightingShader.use();
+        lightingShader.setMat4("projection", projection);
+        lightingShader.setMat4("view", view);
 
         // bind diffuse map Texture on corresponding texture units
         glActiveTexture(GL_TEXTURE0);
@@ -476,9 +458,9 @@ int main() {
 
         glBindVertexArray(cubeVAO);
         for (unsigned int i {0}; i < 1; i++) {
-            glm::mat4 model = glm::mat4(1.0f);
+            glm::mat4 model {glm::mat4(1.0f)};
             model = glm::translate(model, cubePositions[i]);
-            float angle = 20.0f * (float)(i + 1);  // was i+1
+            float angle {20.0f * (float)(i + 1)};  // was i+1
             angle *= (float)glfwGetTime();         // rotate over time
             model = glm::rotate(model, glm::radians(angle),
                                 glm::vec3(0.0f, 1.0f, 0.0f));
@@ -504,7 +486,7 @@ int main() {
         // render the light object
         glBindVertexArray(lightVAO);
         for (unsigned int i {0}; i < 2; i++) {
-            glm::mat4 model = glm::mat4(1.0f);
+            glm::mat4 model {glm::mat4(1.0f)};
             model = glm::translate(model, pointLightPositions[i]);
             model = glm::scale(model, glm::vec3(0.2f));
             lightSrcShader.setMat4("model", model);
@@ -512,103 +494,82 @@ int main() {
         }
         glBindVertexArray(0);
 
-        //======================================================================
-        // @renderer.models
-        // ---------------------------------------------------------------------
-        // draw model objects
-        //======================================================================
-        modelShader.use();
-        modelShader.setMat4("projection", projection);
-        modelShader.setMat4("view", view);
-
-        modelShader.setVec3("viewPos", camera.Position);
 
         //======================================================================
         // @lighting.model
         // ---------------------------------------------------------------------
         // lighting properties
         //======================================================================
-        // Directional Light
-        modelShader.setVec3("dirLight.direction", world_light_direction[0], world_light_direction[1], world_light_direction[2]); // global light dir
-        modelShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
-        modelShader.setVec3("dirLight.diffuse", world_light_diffuse[0], world_light_diffuse[1], world_light_diffuse[2]);  // brightness
-        modelShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
-        // point light 1
-        modelShader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
-        modelShader.setVec3("pointLights[0].ambient", glm::vec3(light1Ambient[0], light1Ambient[1], light1Ambient[2]));
-        modelShader.setVec3("pointLights[0].diffuse", glm::vec3(light1Diffuse[0], light1Diffuse[1], light1Diffuse[2])); // brightness
-        modelShader.setVec3("pointLights[0].specular", glm::vec3(light1Specular[0], light1Specular[1], light1Specular[2]));
-        // attenuation
-        modelShader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
-        modelShader.setFloat("pointLights[0].linear",    0.09f);
-        modelShader.setFloat("pointLights[0].quadratic", 0.032f);
-        // point light 2
-        modelShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-        modelShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
-        modelShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
-        modelShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
-        modelShader.setFloat("pointLights[1].constant", 1.0f);
-        modelShader.setFloat("pointLights[1].linear", 0.09f);
-        modelShader.setFloat("pointLights[1].quadratic", 0.032f);
-        // flashlight
-        modelShader.setVec3("flashLight.position",  camera.Position);
-        modelShader.setVec3("flashLight.direction", camera.Front);
-        modelShader.setFloat("flashLight.cutOff",   glm::cos(glm::radians(12.5f)));
-        modelShader.setFloat("flashLight.outerCutOff",   glm::cos(glm::radians(17.5f)));
-        modelShader.setVec3("flashLight.ambient", 0.1f, 0.1f, 0.1f);
-        modelShader.setVec3("flashLight.diffuse", 1.0f, 1.0f, 1.0f); // brightness
-        modelShader.setVec3("flashLight.specular", 1.0f, 1.0f, 1.0f);
-        modelShader.setFloat("flashLight.constant",  1.0f); // 50 metres
-        modelShader.setFloat("flashLight.linear",    0.09f);
-        modelShader.setFloat("flashLight.quadratic", 0.032f);
-        modelShader.setBool("flashLight.toggle", toggleFlashLight);
 
-        // @render.model.backpack
-        glm::mat4 model = glm::mat4(1.0f);
+        initLights(modelShader, currentCamera);
+
+        //======================================================================
+        // @renderer.models
+        // ---------------------------------------------------------------------
+        // draw model objects
+        //======================================================================
+
+        modelShader.use();
+        modelShader.setMat4("projection", projection);
+        modelShader.setMat4("view", view);
+
+        float angle {20.0f};
+        angle *= (float)glfwGetTime();         // rotate over time
+        // @render.model.carousel
+        glm::mat4 baseModel {glm::mat4(1.0f)};
         // translate to center of the scene
-        model = glm::translate(model, glm::vec3(0.0f, -3.0f, 0.0f));
-        // scale down model to fit scene
-        model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
-        modelShader.setMat4("model", model);
-        // backpackModel.Draw(modelShader);
+        baseModel = glm::translate(baseModel, glm::vec3(25.0f, 0.0f, 0.0f));
+        modelShader.setMat4("model", baseModel);
+        carouselBaseModel.Draw(modelShader);
+
+        glm::mat4 topModel {baseModel};
+        topModel = glm::rotate(topModel, glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+        modelShader.setMat4("model", topModel);
+        carouselTopModel.Draw(modelShader);
+
+        glm::mat4 horsesModel {topModel};
+        horsesModel = glm::translate(horsesModel, glm::vec3(0.0f, (1.0f + sin(glfwGetTime())) * 0.5f, 0.0f));
+        modelShader.setMat4("model", horsesModel);
+        carouselHorsesModel.Draw(modelShader);
+        carouselCamera.UpdatePosition(horsesModel);
 
         // @render.model.pendulumRide
-        glm::mat4 pendulumFrameModel = glm::mat4(1.0f);
-        pendulumFrameModel = glm::translate(pendulumFrameModel, glm::vec3(-3.0f, 0.0f, 0.0f));
-        pendulumFrameModel = glm::scale(pendulumFrameModel, glm::vec3(3.0f, 3.0f, 3.0f));
+        glm::mat4 pendulumFrameModel {glm::mat4(1.0f)};
+        pendulumFrameModel = glm::translate(pendulumFrameModel, glm::vec3(-3.0f, 5.31f, 0.0f));
         modelShader.setMat4("model", pendulumFrameModel);
         pendulumRideFrameModel.Draw(modelShader);
 
         // pendulum arm
-        float angle = 20.0f;
-        glm::mat4 pendulumArmModel = pendulumFrameModel;
+        glm::mat4 pendulumArmModel {pendulumFrameModel};
+        angle = 40.0f;
         angle *= (float)glfwGetTime();         // rotate over time
-        pendulumArmModel = glm::rotate(pendulumArmModel, glm::radians(angle),
+        pendulumArmModel = glm::rotate(pendulumArmModel, glm::radians(pendulumArmAngle),
                             glm::vec3(1.0f, 0.0f, 0.0f));
         modelShader.setMat4("model", pendulumArmModel);
         pendulumRideArmModel.Draw(modelShader);
+        // pendulumCamera.UpdatePosition(pendulumArmModel); // TODO
 
         // pendulum gondola
         angle = 40.0f;
         angle *= (float)glfwGetTime();         // rotate over time
-        glm::mat4 pendulumGondolaModel = pendulumArmModel;
+        glm::mat4 pendulumGondolaModel {pendulumArmModel};
         pendulumGondolaModel = glm::rotate(pendulumGondolaModel, glm::radians(angle),
                             glm::vec3(0.0f, 1.0f, 0.0f));
         modelShader.setMat4("model", pendulumGondolaModel);
         pendulumRideGondolaModel.Draw(modelShader);
+        // pendulumCamera.UpdatePosition(pendulumGondolaModel); // TODO
 
         // @render.model.ground
-
-        model = glm::mat4(1.0f);
+        glm::mat4 model {glm::mat4(1.0f)};
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-        // scale down model to fit scene
-        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));
         modelShader.setMat4("model", model);
         groundModel.Draw(modelShader);
 
-
-
-        // @render.model.skyboc
+        // @render.model.skybox
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+        modelShader.setMat4("model", model);
+        skyBoxModel.Draw(modelShader);
 
         glBindVertexArray(0); // no need to unbind it every time
 
@@ -658,21 +619,33 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (!imguiMode) {
+    if (!imguiMode && cameraID == 0) {
         // Camera movement
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            camera.ProcessKeyboard(FORWARD, deltaTime);
+            freeCamera.ProcessKeyboard(FORWARD, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            camera.ProcessKeyboard(BACKWARD, deltaTime);
+            freeCamera.ProcessKeyboard(BACKWARD, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            camera.ProcessKeyboard(LEFT, deltaTime);
+            freeCamera.ProcessKeyboard(LEFT, deltaTime);
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-            camera.ProcessKeyboard(RIGHT, deltaTime);
+            freeCamera.ProcessKeyboard(RIGHT, deltaTime);
 
-        // if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
             // TODO
-        // if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            pendulumArmAngle -= 1.0f;
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
             // TODO
+            pendulumArmAngle += 1.0f;
+    } else if (!imguiMode && cameraID == 1) {
+        // Camera movement
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            groundCamera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            groundCamera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            groundCamera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            groundCamera.ProcessKeyboard(RIGHT, deltaTime);
     }
 }
 
@@ -736,7 +709,9 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn) {
     lastX = xpos;
     lastY = ypos;
 
-    camera.ProcessMouseMovement(xoffset, yoffset);
+    freeCamera.ProcessMouseMovement(xoffset, yoffset);
+    groundCamera.ProcessMouseMovement(xoffset, yoffset);
+    carouselCamera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 //==============================================================================
@@ -770,7 +745,10 @@ void setInputMode(GLFWwindow* window, bool enableImgui)
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     (void)window;   // suppress -Wunused-parameter
     (void)xoffset;  // suppress -Wunused-parameter
-    camera.ProcessMouseScroll(static_cast<float>(yoffset));
+    freeCamera.ProcessMouseScroll(static_cast<float>(yoffset));
+    groundCamera.ProcessMouseScroll(static_cast<float>(yoffset));
+    carouselCamera.ProcessMouseScroll(static_cast<float>(yoffset));
+    // pendulumCamera.ProcessMouseScroll(static_cast<float>(yoffset)); // TODO
 }
 
 //==============================================================================
@@ -823,26 +801,20 @@ unsigned int loadTexture(const char* path)
 void renderGUI() {
     // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
     {
-        static float f = 0.0f;
-        static int counter = 0;
+        static float f {0.0f};
 
-        ImGui::Begin("Hello, world!", NULL, ImGuiWindowFlags_AlwaysAutoResize); // Create a window called "Hello, world!" and append into it.
-
-        ImGui::Text("This is some useful text."); // Display some text (you can use a format strings too)
-
+        ImGui::Begin("Hello, world!", NULL, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text( "Input mode: %s", imguiMode ? "GUI" : "Camera");
-
         ImGui::Text("Press M to switch modes");
-
+        if (ImGui::Button("Next Camera"))
+            cameraID = ((cameraID + 1) % 3); // counter starts from 1
+        ImGui::SameLine();
+        ImGui::Text("Camera: %d", cameraID);
         ImGui::Checkbox("Edit Lights Window", &show_lights_window);
-
         ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
         ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text("counter = %d", counter);
+        // ImGui::Text("Position, R: %f, G: %f, B: %f", positionss[0], positionss[1], positionss[2]); // TODO
+        // ImGui::DragFloat3("Positionss", positionss, 0.01f, -10.0f, 10.0f, "%.3f", ImGuiSliderFlags_None);
 
         ImGui::End();
     }
@@ -858,7 +830,7 @@ void renderGUI() {
 // @imgui.fps
 //==============================================================================
 void showFrameRateUI() {
-    static int location = 3;
+    static int location {3};
     ImGuiIO& io = ImGui::GetIO();
     ImGuiWindowFlags window_flags =
         ImGuiWindowFlags_NoDecoration |
@@ -866,7 +838,7 @@ void showFrameRateUI() {
         ImGuiWindowFlags_NoSavedSettings |
         ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoNav;
-    const float PAD = 10.0f;
+    const float PAD {10.0f};
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImVec2 work_pos = viewport->WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
     ImVec2 work_size = viewport->WorkSize;
@@ -895,27 +867,27 @@ void showLightsUI() {
     ImGui::Begin("Edit lights", &show_lights_window, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Text("Edit lights");
 
-    static ImGuiSliderFlags sliderFlags = ImGuiSliderFlags_None;
-    static ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed;
+    static ImGuiSliderFlags sliderFlags {ImGuiSliderFlags_None};
+    static ImGuiTreeNodeFlags nodeFlags {ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed};
     if (ImGui::TreeNodeEx("Directional Light", nodeFlags)) {
         ImGui::Text("World light direction, x: %f, y: %f, z: %f", world_light_direction[0], world_light_direction[1], world_light_direction[2]);
-        ImGui::DragFloat3("Light direction", world_light_direction, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
-        ImGui::Text("World light diffuse, x: %f, y: %f, z: %f", world_light_diffuse[0], world_light_diffuse[1], world_light_diffuse[2]);
-        ImGui::DragFloat3("Diffuse", world_light_diffuse, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags);
+        ImGui::DragFloat3("Light direction", world_light_direction, 0.01f, -1.0f, 0.0f, "%.3f", sliderFlags);
+        ImGui::Text("World light diffuse intensity: %f", world_light_diffuse);
+        ImGui::DragFloat("Diffuse", &world_light_diffuse, 0.01f, 0.0f, 1.0f, "%.2f", sliderFlags);
         ImGui::TreePop();
     }
     if (ImGui::TreeNodeEx("Point Light 1", nodeFlags)) {
         ImGui::Text("Light 1 pos, x: %.2f, y: %.2f, z: %.2f", light1Position[0], light1Position[1], light1Position[2]);
-        ImGui::DragFloat3("Position", light1Position, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        ImGui::DragFloat3("Position", light1Position, 0.01f, -24.0f, 24.0f, "%.3f", sliderFlags); ImGui::SameLine();
         if (ImGui::Button("reset pos")) { light1Position[0] = {1.2f}; light1Position[1] = {1.0f}; light1Position[2] = {2.0f};}
         ImGui::Text("Light 1 Ambient, R: %f, G: %f, B: %f", light1Ambient[0], light1Ambient[1], light1Ambient[2]);
-        ImGui::DragFloat3("Ambient", light1Ambient, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        ImGui::DragFloat3("Ambient", light1Ambient, 0.01f, -15.0f, 15.0f, "%.3f", sliderFlags); ImGui::SameLine();
         if (ImGui::Button("reset amb")) { light1Ambient[0] = {0.1f}; light1Ambient[1] = {0.1f}; light1Ambient[2] = {0.1f};}
         ImGui::Text("Light 1 Diffuse, R: %f, G: %f, B: %f", light1Diffuse[0], light1Diffuse[1], light1Diffuse[2]);
-        ImGui::DragFloat3("Diffuse", light1Diffuse, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        ImGui::DragFloat3("Diffuse", light1Diffuse, 0.01f, -15.0f, 15.0f, "%.3f", sliderFlags); ImGui::SameLine();
         if (ImGui::Button("reset diff")) { light1Diffuse[0] = {1.0f}; light1Diffuse[1] = {1.0f}; light1Diffuse[2] = {1.0f};}
         ImGui::Text("Light 1 Specular, R: %f, G: %f, B: %f", light1Specular[0], light1Specular[1], light1Specular[2]);
-        ImGui::DragFloat3("Specular", light1Specular, 0.01f, -5.0f, 5.0f, "%.3f", sliderFlags); ImGui::SameLine();
+        ImGui::DragFloat3("Specular", light1Specular, 0.01f, -15.0f, 15.0f, "%.3f", sliderFlags); ImGui::SameLine();
         if (ImGui::Button("reset spec")) { light1Specular[0] = {1.0f}; light1Specular[1] = {1.0f}; light1Specular[2] = {1.0f};}
         ImGui::TreePop();
     }
@@ -939,3 +911,50 @@ void syncLightPositionsFromUI() {
         light2Position[0], light2Position[1], light2Position[2]);
 }
 
+//======================================================================
+// @lighting.init
+// ---------------------------------------------------------------------
+// lighting properties
+//======================================================================
+void initLights(Shader shader, Camera camera) {
+    // activate shader
+    shader.use();
+    shader.setVec3("viewPos", camera.Position);
+
+    // material shininess
+    shader.setFloat("material.shininess", 32.0f);
+    // directional Light
+    shader.setVec3("dirLight.direction", world_light_direction[0], world_light_direction[1], world_light_direction[2]); // global light dir
+    shader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
+    shader.setVec3("dirLight.diffuse", world_light_diffuse, world_light_diffuse, world_light_diffuse);  // brightness
+    shader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
+    // point light 1
+    shader.setVec3("pointLights[0].position", pointLightPositions[0]); // light pos
+    shader.setVec3("pointLights[0].ambient", glm::vec3(light1Ambient[0], light1Ambient[1], light1Ambient[2]));
+    shader.setVec3("pointLights[0].diffuse", glm::vec3(light1Diffuse[0], light1Diffuse[1], light1Diffuse[2])); // brightness
+    shader.setVec3("pointLights[0].specular", glm::vec3(light1Specular[0], light1Specular[1], light1Specular[2]));
+    // attenuation
+    shader.setFloat("pointLights[0].constant",  1.0f); // 50 metres
+    shader.setFloat("pointLights[0].linear",    0.09f);
+    shader.setFloat("pointLights[0].quadratic", 0.032f);
+    // point light 2
+    shader.setVec3("pointLights[1].position", pointLightPositions[1]);
+    shader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
+    shader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f); // brightness
+    shader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
+    shader.setFloat("pointLights[1].constant", 1.0f);
+    shader.setFloat("pointLights[1].linear", 0.09f);
+    shader.setFloat("pointLights[1].quadratic", 0.032f);
+    // flashlight
+    shader.setVec3("flashLight.position",  camera.Position);
+    shader.setVec3("flashLight.direction", camera.Front);
+    shader.setFloat("flashLight.cutOff",   glm::cos(glm::radians(12.5f)));
+    shader.setFloat("flashLight.outerCutOff",   glm::cos(glm::radians(17.5f)));
+    shader.setVec3("flashLight.ambient", 0.1f, 0.1f, 0.1f);
+    shader.setVec3("flashLight.diffuse", 1.0f, 1.0f, 1.0f); // brightness
+    shader.setVec3("flashLight.specular", 1.0f, 1.0f, 1.0f);
+    shader.setFloat("flashLight.constant",  1.0f); // 50 metres
+    shader.setFloat("flashLight.linear",    0.09f);
+    shader.setFloat("flashLight.quadratic", 0.032f);
+    shader.setBool("flashLight.toggle", toggleFlashLight);
+}
