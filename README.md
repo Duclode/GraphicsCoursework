@@ -27,6 +27,10 @@ This project demonstrates real-time rendering using modern OpenGL, including:
 
 # How to Build and run:
 
+*** WARNING It doesn't build correctly on windows and only opens a window with the imgui's
+I'm not very good at CMake nor do I know know much about programming on Windows/MSVC so
+if you want fix it yourself or build it on Linux SORRY :/ ***
+
 Requirements
 ------------
 
