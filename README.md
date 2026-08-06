@@ -86,3 +86,5 @@ build/Themepark.sln
 | Scroll wheel | Change camera zoom |
 | F            | Toggle flashlight  |
 | ESC          | Exit               |
+| LEFT ARROW   | rotate ride left   |
+| RIGHT ARROW  | rotate ride right  |
