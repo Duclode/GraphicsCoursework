@@ -1,3 +1,0 @@
-|894|     shader.setVec3("viewPos", camera.Position);
-|921|     shader.setVec3("flashLight.position",  camera.Position);
-|922|     shader.setVec3("flashLight.direction", camera.Front);

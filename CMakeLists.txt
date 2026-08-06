@@ -49,22 +49,29 @@ set(SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 
 add_executable(${PROJECT_NAME})
 
-target_compile_options(${PROJECT_NAME}
-  PRIVATE
-    -pedantic-errors
-    -Wall
-    # -Weffc++
-    -Wextra
-    -Wconversion
-    # -Wsign-conversion
-    # -Werror
-)
+if (MSVC)
+    target_compile_options(${PROJECT_NAME}
+      PRIVATE
+        /W4
+        $<$<CONFIG:Debug>:/Od>
+        $<$<CONFIG:Debug>:/Zi>
+        $<$<CONFIG:Release>:/O2>
 
-target_compile_options(${PROJECT_NAME}
-  PRIVATE
-    $<$<CONFIG:Debug>:-ggdb -O0>
-    $<$<CONFIG:Release>:-O3>
-)
+    )
+else()
+    target_compile_options(${PROJECT_NAME}
+      PRIVATE
+        -pedantic-errors
+        -Wall
+        # -Weffc++
+        -Wextra
+        -Wconversion
+        # -Wsign-conversion
+        # -Werror
+        $<$<CONFIG:Debug>:-ggdb -O0>
+        $<$<CONFIG:Release>:-O3>
+    )
+endif()
 
 target_sources(${PROJECT_NAME}
   PRIVATE

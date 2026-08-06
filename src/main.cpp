@@ -205,7 +205,11 @@ int main() {
     Model carouselTopModel("assets/carousel/top.obj");
     Model carouselHorsesModel("assets/carousel/horses.obj");
     Model carouselBaseModel("assets/carousel/base.obj");
-    Model skyBoxModel("assets/skyBox/sky.obj");
+    Model skyBoxNModel("assets/skyBox/skyN.obj");
+    Model skyBoxEModel("assets/skyBox/skyE.obj");
+    Model skyBoxSModel("assets/skyBox/skyS.obj");
+    Model skyBoxWModel("assets/skyBox/skyW.obj");
+    Model treesModel("assets/trees/trees.obj");
     stbi_set_flip_vertically_on_load(true);
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
@@ -437,7 +441,7 @@ int main() {
             currentCamera = &carouselCamera;
         }
         glm::mat4 projection = glm::perspective(
-            glm::radians(currentCamera->Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f
+            glm::radians(currentCamera->Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 300.0f
         );
         glm::mat4 view = currentCamera->GetViewMatrix();
 
@@ -529,8 +533,7 @@ int main() {
         baseModel = glm::translate(baseModel, glm::vec3(25.0f, 0.0f, 0.0f));
 
         AABB carouselBaseBounds = carouselBaseModel.GetWorldBounds(baseModel);
-        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, carouselBaseBounds))
-        {
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, carouselBaseBounds)) {
             currentCamera->Position = previousCameraPosition;
         }
 
@@ -541,8 +544,7 @@ int main() {
         topModel = glm::rotate(topModel, glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
 
         AABB carouselTopBounds = carouselTopModel.GetWorldBounds(baseModel);
-        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, carouselTopBounds))
-        {
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, carouselTopBounds)) {
             currentCamera->Position = previousCameraPosition;
         }
 
@@ -560,8 +562,7 @@ int main() {
         pendulumFrameModel = glm::translate(pendulumFrameModel, glm::vec3(-3.0f, 5.31f, 0.0f));
 
         AABB pendulumFrameBounds = pendulumRideFrameModel.GetWorldBounds(pendulumFrameModel);
-        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, pendulumFrameBounds))
-        {
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, pendulumFrameBounds)) {
             currentCamera->Position = previousCameraPosition;
         }
 
@@ -593,8 +594,7 @@ int main() {
         surfaceModel = glm::translate(surfaceModel, glm::vec3(0.0f, 0.0f, 0.0f));
 
         AABB groundBounds = groundModel.GetWorldBounds(surfaceModel);
-        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, groundBounds))
-        {
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, groundBounds)) {
             currentCamera->Position = previousCameraPosition;
         }
 
@@ -602,17 +602,23 @@ int main() {
         groundModel.Draw(modelShader);
 
         // @render.model.skybox
-        glm::mat4 skyModel = glm::mat4(1.0f);
-        skyModel = glm::translate(surfaceModel, glm::vec3(0.0f, 0.0f, 0.0f));
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(surfaceModel, glm::vec3(0.0f, 0.0f, 0.0f));
 
-        AABB skyBounds = skyBoxModel.GetWorldBounds(surfaceModel);
-        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, skyBounds))
+        AABB skyNBounds = skyBoxNModel.GetWorldBounds(surfaceModel);
+        AABB skyWBounds = skyBoxWModel.GetWorldBounds(surfaceModel);
+        if ((!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, skyNBounds))
+            || (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, skyWBounds)))
         {
             currentCamera->Position = previousCameraPosition;
         }
 
-        modelShader.setMat4("model", skyModel);
-        skyBoxModel.Draw(modelShader);
+        modelShader.setMat4("model", model);
+        skyBoxNModel.Draw(modelShader);
+        skyBoxWModel.Draw(modelShader);
+
+        // @render.model.trees
+        treesModel.Draw(modelShader);
 
         glBindVertexArray(0); // no need to unbind it every time
 
@@ -968,7 +974,7 @@ void initLights(Shader shader, Camera &camera) {
     shader.setFloat("material.shininess", 32.0f);
     // directional Light
     shader.setVec3("dirLight.direction", world_light_direction[0], world_light_direction[1], world_light_direction[2]); // global light dir
-    shader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
+    shader.setVec3("dirLight.ambient", 0.1f, 0.1f, 0.1f);
     shader.setVec3("dirLight.diffuse", world_light_diffuse, world_light_diffuse, world_light_diffuse);  // brightness
     shader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
     // point light 1
