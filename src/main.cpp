@@ -2,6 +2,7 @@
 #include <Shader.h>
 #include <camera.h>
 #include <model.h>
+#include <collision.h>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -36,7 +37,7 @@ void renderGUI();
 void showFrameRateUI();
 void showLightsUI();
 void syncLightPositionsFromUI();
-void initLights(Shader shader, Camera camera);
+void initLights(Shader shader, Camera &camera);
 
 //==============================================================================
 // @global.state_settings
@@ -52,9 +53,10 @@ Camera freeCamera(glm::vec3(-4.2f, 5.8f, 7.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90
 Camera groundCamera(glm::vec3(-4.2f, 1.75f, 7.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, FPS);
 Camera carouselCamera(glm::vec3(0.50f, 3.3f, -3.25f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, STATIONARY);
 // Camera pendulumCamera(glm::vec3(-3.8f, 1.9f, 0.25f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f, STATIONARY);
-Camera currentCamera {freeCamera};
+Camera* currentCamera = &freeCamera;
 // float positionss[3] = {-5.00f, -3.41f, -3.25f};
 int cameraID {0};
+bool justSwitchedCamera = false;
 
 // mouse
 bool firstMouse {true};
@@ -393,9 +395,15 @@ int main() {
 
         glfwPollEvents();
 
+        glm::vec3 previousCameraPosition = currentCamera->Position;
+
         // input
         // -----
         processInput(window);
+
+        Sphere cameraSphere;
+        cameraSphere.center = currentCamera->Position;
+        cameraSphere.radius = 0.35f;
 
         // (Your code calls glfwPollEvents())
         // ...
@@ -422,16 +430,16 @@ int main() {
         //======================================================================
 
         if (cameraID == 0) {
-            currentCamera = freeCamera;
+            currentCamera = &freeCamera;
         } else if (cameraID == 1) {
-            currentCamera = groundCamera;
+            currentCamera = &groundCamera;
         } else if (cameraID == 2) {
-            currentCamera = carouselCamera;
+            currentCamera = &carouselCamera;
         }
         glm::mat4 projection = glm::perspective(
-            glm::radians(currentCamera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f
+            glm::radians(currentCamera->Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f
         );
-        glm::mat4 view = currentCamera.GetViewMatrix();
+        glm::mat4 view = currentCamera->GetViewMatrix();
 
         //======================================================================
         // @lighting.cubes
@@ -439,7 +447,7 @@ int main() {
         // lighting properties
         //======================================================================
 
-        initLights(lightingShader, currentCamera);
+        initLights(lightingShader, *currentCamera);
 
         //======================================================================
         // @renderer.cubes
@@ -501,7 +509,7 @@ int main() {
         // lighting properties
         //======================================================================
 
-        initLights(modelShader, currentCamera);
+        initLights(modelShader, *currentCamera);
 
         //======================================================================
         // @renderer.models
@@ -519,11 +527,25 @@ int main() {
         glm::mat4 baseModel {glm::mat4(1.0f)};
         // translate to center of the scene
         baseModel = glm::translate(baseModel, glm::vec3(25.0f, 0.0f, 0.0f));
+
+        AABB carouselBaseBounds = carouselBaseModel.GetWorldBounds(baseModel);
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, carouselBaseBounds))
+        {
+            currentCamera->Position = previousCameraPosition;
+        }
+
         modelShader.setMat4("model", baseModel);
         carouselBaseModel.Draw(modelShader);
 
         glm::mat4 topModel {baseModel};
         topModel = glm::rotate(topModel, glm::radians(angle), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        AABB carouselTopBounds = carouselTopModel.GetWorldBounds(baseModel);
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, carouselTopBounds))
+        {
+            currentCamera->Position = previousCameraPosition;
+        }
+
         modelShader.setMat4("model", topModel);
         carouselTopModel.Draw(modelShader);
 
@@ -536,6 +558,13 @@ int main() {
         // @render.model.pendulumRide
         glm::mat4 pendulumFrameModel {glm::mat4(1.0f)};
         pendulumFrameModel = glm::translate(pendulumFrameModel, glm::vec3(-3.0f, 5.31f, 0.0f));
+
+        AABB pendulumFrameBounds = pendulumRideFrameModel.GetWorldBounds(pendulumFrameModel);
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, pendulumFrameBounds))
+        {
+            currentCamera->Position = previousCameraPosition;
+        }
+
         modelShader.setMat4("model", pendulumFrameModel);
         pendulumRideFrameModel.Draw(modelShader);
 
@@ -560,15 +589,29 @@ int main() {
         // pendulumCamera.UpdatePosition(pendulumGondolaModel); // TODO
 
         // @render.model.ground
-        glm::mat4 model {glm::mat4(1.0f)};
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-        modelShader.setMat4("model", model);
+        glm::mat4 surfaceModel {glm::mat4(1.0f)};
+        surfaceModel = glm::translate(surfaceModel, glm::vec3(0.0f, 0.0f, 0.0f));
+
+        AABB groundBounds = groundModel.GetWorldBounds(surfaceModel);
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, groundBounds))
+        {
+            currentCamera->Position = previousCameraPosition;
+        }
+
+        modelShader.setMat4("model", surfaceModel);
         groundModel.Draw(modelShader);
 
         // @render.model.skybox
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-        modelShader.setMat4("model", model);
+        glm::mat4 skyModel = glm::mat4(1.0f);
+        skyModel = glm::translate(surfaceModel, glm::vec3(0.0f, 0.0f, 0.0f));
+
+        AABB skyBounds = skyBoxModel.GetWorldBounds(surfaceModel);
+        if (!justSwitchedCamera && SphereIntersectsAABB(cameraSphere, skyBounds))
+        {
+            currentCamera->Position = previousCameraPosition;
+        }
+
+        modelShader.setMat4("model", skyModel);
         skyBoxModel.Draw(modelShader);
 
         glBindVertexArray(0); // no need to unbind it every time
@@ -581,6 +624,7 @@ int main() {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
+        justSwitchedCamera = false;
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse
         // moved etc.)
         // -------------------------------------------------------------------
@@ -632,10 +676,10 @@ void processInput(GLFWwindow* window) {
 
         if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
             // TODO
-            pendulumArmAngle -= 1.0f;
+            pendulumArmAngle -= 1.5f;
         if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
             // TODO
-            pendulumArmAngle += 1.0f;
+            pendulumArmAngle += 1.5f;
     } else if (!imguiMode && cameraID == 1) {
         // Camera movement
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -801,17 +845,16 @@ unsigned int loadTexture(const char* path)
 void renderGUI() {
     // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
     {
-        static float f {0.0f};
-
         ImGui::Begin("Hello, world!", NULL, ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Text( "Input mode: %s", imguiMode ? "GUI" : "Camera");
         ImGui::Text("Press M to switch modes");
-        if (ImGui::Button("Next Camera"))
+        if (ImGui::Button("Next Camera")){
             cameraID = ((cameraID + 1) % 3); // counter starts from 1
+            justSwitchedCamera = true;
+        }
         ImGui::SameLine();
         ImGui::Text("Camera: %d", cameraID);
         ImGui::Checkbox("Edit Lights Window", &show_lights_window);
-        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
         ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
         // ImGui::Text("Position, R: %f, G: %f, B: %f", positionss[0], positionss[1], positionss[2]); // TODO
         // ImGui::DragFloat3("Positionss", positionss, 0.01f, -10.0f, 10.0f, "%.3f", ImGuiSliderFlags_None);
@@ -916,7 +959,7 @@ void syncLightPositionsFromUI() {
 // ---------------------------------------------------------------------
 // lighting properties
 //======================================================================
-void initLights(Shader shader, Camera camera) {
+void initLights(Shader shader, Camera &camera) {
     // activate shader
     shader.use();
     shader.setVec3("viewPos", camera.Position);

@@ -9,6 +9,7 @@
 
 #include <string>
 #include <vector>
+#include <cfloat>
 
 #define MAX_BONE_INFLUENCE 4
 
@@ -30,6 +31,12 @@ struct Texture {
     std::string path; // texture path to compare with other textures
 };
 
+struct AABB
+{
+    glm::vec3 min;
+    glm::vec3 max;
+};
+
 class Mesh {
 public:
     // mesh data
@@ -38,12 +45,24 @@ public:
     std::vector<Texture>      textures{};
     unsigned int VAO{};
 
+    AABB bounds;
+
     // constructor
     Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices,
          std::vector<Texture> textures) {
         this->vertices = vertices;
         this->indices = indices;
         this->textures = textures;
+
+        // Calculate local-space AABB
+        bounds.min = glm::vec3(FLT_MAX);
+        bounds.max = glm::vec3(-FLT_MAX);
+
+        for (const Vertex& vertex : this->vertices)
+        {
+            bounds.min = glm::min(bounds.min, vertex.Position);
+            bounds.max = glm::max(bounds.max, vertex.Position);
+        }
 
         setupMesh();
     }
@@ -81,6 +100,17 @@ public:
 
         glActiveTexture(GL_TEXTURE0);
     }
+
+    AABB GetWorldBounds(glm::mat4& modelMatrix) const {
+        glm::vec3 translation = glm::vec3(modelMatrix[3]);
+
+        AABB worldBounds;
+        worldBounds.min = bounds.min + translation;
+        worldBounds.max = bounds.max + translation;
+
+        return worldBounds;
+    }
+
 private:
     // render data
     unsigned int VBO{};

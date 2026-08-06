@@ -69,6 +69,7 @@ target_compile_options(${PROJECT_NAME}
 target_sources(${PROJECT_NAME}
   PRIVATE
     ${SRC_DIR}/main.cpp
+    ${SRC_DIR}/collision.cpp
 )
 
 add_library(stb INTERFACE)

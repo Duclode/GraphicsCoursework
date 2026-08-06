@@ -14,11 +14,9 @@
 #include "mesh.h"
 
 #include <string>
-// #include <fstream>
-// #include <sstream>
 #include <iostream>
-// #include <map>
 #include <vector>
+#include <cfloat>
 
 unsigned int TextureFromFile(const char* path,
                              const std::string &directory /* , bool gamma = false */);
@@ -33,6 +31,23 @@ public:
     void Draw(Shader &shader) {
         for(unsigned int i = 0; i < meshes.size(); i++)
             meshes[i].Draw(shader);
+    }
+
+    AABB GetWorldBounds(glm::mat4& modelMatrix) {
+        AABB worldBounds;
+
+        worldBounds.min = glm::vec3(FLT_MAX);
+        worldBounds.max = glm::vec3(-FLT_MAX);
+
+        for (const Mesh& mesh : meshes)
+        {
+            AABB meshBounds = mesh.GetWorldBounds(modelMatrix);
+
+            worldBounds.min = glm::min(worldBounds.min, meshBounds.min);
+            worldBounds.max = glm::max(worldBounds.max, meshBounds.max);
+        }
+
+        return worldBounds;
     }
 private:
     // model data
